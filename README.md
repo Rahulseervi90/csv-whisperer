@@ -1,4 +1,5 @@
 # 🗂️ CSV Whisperer
+ [![Live Demo](https://img.shields.io/badge/Live%20Demo-Click%20Here-FF4B4B?style=for-the-badge&logo=streamlit)](https://csv-whisperer.streamlit.app)
 
 > Ask plain-English questions about any CSV file — get instant answers, charts, and the Python code that generated them.
 
