@@ -307,8 +307,11 @@ CODE:
                             st.info(str(res))
 
             except Exception as e:
-                st.error(f"Something went wrong: {e}")
-                st.code(traceback.format_exc())
+                if "429" in str(e):
+                    st.warning("⏳ Too many questions too quickly. The free plan allows only a few per minute. Please wait about 30 seconds and try again.")
+                else:
+                    st.error(f"Something went wrong: {e}")
+                    st.code(traceback.format_exc())
 
 else:
     st.markdown("""
