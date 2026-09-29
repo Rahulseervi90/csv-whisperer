@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 import os, re, traceback
+
+# ── Settings ─────────────────────────────────────────────────────────────────
+# If Google ever retires this model name, change this ONE line.
+MODEL_NAME = "gemini-flash-latest"
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -171,7 +176,20 @@ if api_key:
 uploaded = st.file_uploader("Upload your CSV file", type=["csv"], label_visibility="collapsed")
 
 if uploaded:
-    df = pd.read_csv(uploaded)
+    # Read the file, with friendly messages instead of a crash
+    try:
+        df = pd.read_csv(uploaded)
+    except pd.errors.EmptyDataError:
+        st.error("This file looks empty. Please upload a CSV that contains data.")
+        st.stop()
+    except Exception:
+        st.error("Sorry, I couldn't read that file. Please check that it is a valid CSV.")
+        st.stop()
+
+    if df.empty:
+        st.warning("This CSV has column names but no rows of data. Please upload a file with data.")
+        st.stop()
+
     st.session_state["df"] = df
 
     # Stat cards
@@ -211,13 +229,21 @@ if uploaded:
 
     query = st.text_input(
         "Your question",
-        value=st.session_state.get("query_input", ""),
         placeholder="e.g. Which month had the highest sales?",
         label_visibility="collapsed",
         key="query_input",
     )
 
-    if st.button("Ask →", use_container_width=False) and query and api_key:
+    # The Ask button is created ONCE, then we check the saved result below
+    ask_clicked = st.button("Ask →", key="ask_btn")
+
+    if ask_clicked and not api_key:
+        st.warning("Please enter your API key first.")
+
+    elif ask_clicked and not query.strip():
+        st.warning("Please type a question first.")
+
+    elif ask_clicked:
         col_info = "\n".join([f"- {c} ({df[c].dtype}): sample {df[c].dropna().head(3).tolist()}" for c in df.columns])
         schema = f"DataFrame shape: {df.shape}\nColumns:\n{col_info}\n\nFirst 5 rows:\n{df.head(5).to_string()}"
 
@@ -240,7 +266,7 @@ CODE:
 """
         with st.spinner("Thinking..."):
             try:
-                model = genai.GenerativeModel("gemini-flash-latest")
+                model = genai.GenerativeModel(MODEL_NAME)
                 response = model.generate_content(prompt)
                 raw = response.text
 
@@ -257,14 +283,14 @@ CODE:
 
                 if code:
                     with st.expander("Generated code", expanded=False):
-                        st.markdown(f'<div class="code-block">{code}</div>', unsafe_allow_html=True)
+                        st.code(code, language="python")
 
-                    # Execute code safely
-                    local_vars = {"df": df.copy(), "pd": pd, "px": px, "go": go}
-                    exec(code, {}, local_vars)
+                    # Run the generated code (one shared dictionary so it can see df everywhere)
+                    env = {"df": df.copy(), "pd": pd, "np": np, "px": px, "go": go}
+                    exec(code, env)
 
-                    if "fig" in local_vars and local_vars["fig"] is not None:
-                        fig = local_vars["fig"]
+                    fig = env.get("fig")
+                    if fig is not None:
                         fig.update_layout(
                             paper_bgcolor="white",
                             plot_bgcolor="#F7F8FA",
@@ -273,8 +299,8 @@ CODE:
                         )
                         st.plotly_chart(fig, use_container_width=True)
 
-                    if "result" in local_vars:
-                        res = local_vars["result"]
+                    if "result" in env:
+                        res = env["result"]
                         if isinstance(res, pd.DataFrame):
                             st.dataframe(res, use_container_width=True)
                         elif res is not None:
@@ -283,9 +309,6 @@ CODE:
             except Exception as e:
                 st.error(f"Something went wrong: {e}")
                 st.code(traceback.format_exc())
-
-    elif st.button("Ask →") and not api_key:
-        st.warning("Please enter your Gemini API key above.")
 
 else:
     st.markdown("""
